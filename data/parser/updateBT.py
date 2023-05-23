@@ -16,6 +16,7 @@ cell_infos = {}
 inst_infos = {}
 inst_infos_name2alias = {}
 net_infos = {}
+net_infos_name2alias = {}
 
 # Write def
 def writeDef(out_def:str, design_name:str, d_x:int, d_y:int, top_comp_cnt:int, bot_comp_cnt:int, terminal_cnt:int):
@@ -107,10 +108,8 @@ def writeDef(out_def:str, design_name:str, d_x:int, d_y:int, top_comp_cnt:int, b
     f_out_top.write("TRACKS X 128 DO 1908 STEP 128 LAYER M1 ;\n\n")
 
     if(ENABLE_MERGE):
-        f_out_top.write("TRACKS Y 3340 DO 146 STEP 3200 LAYER BT ;\n")
-        f_out_top.write("TRACKS X 3550 DO 140 STEP 3360 LAYER BT ;\n")
-        f_out_top.write("TRACKS Y 3340 DO 146 STEP 3200 LAYER metal10 ;\n")
-        f_out_top.write("TRACKS X 3550 DO 140 STEP 3360 LAYER metal10 ;\n")
+        # f_out_top.write("TRACKS Y 3340 DO 146 STEP 3200 LAYER metal10 ;\n")
+        # f_out_top.write("TRACKS X 3550 DO 140 STEP 3360 LAYER metal10 ;\n")
         f_out_top.write("TRACKS X 1870 DO 280 STEP 1680 LAYER metal9 ;\n")
         f_out_top.write("TRACKS Y 3340 DO 146 STEP 3200 LAYER metal9 ;\n")
         f_out_top.write("TRACKS Y 1820 DO 279 STEP 1680 LAYER metal8 ;\n")
@@ -130,8 +129,8 @@ def writeDef(out_def:str, design_name:str, d_x:int, d_y:int, top_comp_cnt:int, b
         f_out_top.write("TRACKS X 190 DO 1243 STEP 380 LAYER metal1 ;\n")
         f_out_top.write("TRACKS Y 140 DO 1680 STEP 280 LAYER metal1 ;\n\n")
     else:
-        f_out_bot.write("TRACKS Y 3340 DO 146 STEP 3200 LAYER metal10 ;\n")
-        f_out_bot.write("TRACKS X 3550 DO 140 STEP 3360 LAYER metal10 ;\n")
+        #f_out_bot.write("TRACKS Y 3340 DO 146 STEP 3200 LAYER metal10 ;\n")
+        #f_out_bot.write("TRACKS X 3550 DO 140 STEP 3360 LAYER metal10 ;\n")
         f_out_bot.write("TRACKS X 1870 DO 280 STEP 1680 LAYER metal9 ;\n")
         f_out_bot.write("TRACKS Y 3340 DO 146 STEP 3200 LAYER metal9 ;\n")
         f_out_bot.write("TRACKS Y 1820 DO 279 STEP 1680 LAYER metal8 ;\n")
@@ -190,12 +189,6 @@ def writeDef(out_def:str, design_name:str, d_x:int, d_y:int, top_comp_cnt:int, b
         f_out_bot.write("GCELLGRID Y 140 DO {:d} STEP 2800 ;\n".format(bot_y_mid))
         f_out_bot.write("GCELLGRID Y 0 DO 2 STEP 140 ;\n\n")
 
-    if(ENABLE_MERGE):
-        f_out_top.write("BLOCKAGES 1 ;\n")
-        f_out_top.write("  - LAYER BT\n")
-        f_out_top.write("      RECT ( 0 0 ) ( {} {} ) ;\n".format(int(d_x), int(d_y)))
-        f_out_top.write("END BLOCKAGES\n\n")
-
     # components
     if(ENABLE_MERGE):
         f_out_top.write("COMPONENTS {:d} ;\n".format(top_comp_cnt + bot_comp_cnt))
@@ -240,6 +233,7 @@ def writeDef(out_def:str, design_name:str, d_x:int, d_y:int, top_comp_cnt:int, b
         if(FORCE_NAME):
             net_alias = net_name
             net_name = net_info["name"]
+            net_infos_name2alias[net_name] = net_alias
         if(len(net_info["terminal"]) == 0):
             cell_name = net_info["pins"][0].rsplit('/')[0]
             if(FORCE_NAME):
@@ -266,7 +260,7 @@ def writeDef(out_def:str, design_name:str, d_x:int, d_y:int, top_comp_cnt:int, b
                 bot_net_alias.append(net_alias)
 
             f_out_top.write("- {} + NET {} + DIRECTION INPUT + USE SIGNAL\n".format(net_info["terminal"]["name"], net_name))
-            f_out_top.write("  + LAYER BT ( -500 -500 ) ( 500 500 )\n")
+            f_out_top.write("  + LAYER MINT6 ( -500 -500 ) ( 500 500 )\n")
             f_out_top.write("  + PLACED ( {:d} {:d} ) N ;\n".format(net_info["terminal"]["loc_x"], net_info["terminal"]["loc_y"]))
 
             if(not ENABLE_MERGE):
@@ -296,6 +290,8 @@ def writeDef(out_def:str, design_name:str, d_x:int, d_y:int, top_comp_cnt:int, b
                 if(inst_infos[inst_infos_name2alias[cell_name]]["tier"]):
                     f_out_top.write("  ( {} {} )\n".format(cell_name, pin_name))
             f_out_top.write(" ;\n")
+        
+        updateBT("./ethmac_bt.txt")
     else:
         for net_name in top_net_names:
             f_out_top.write("- {}\n".format(net_name))
@@ -761,6 +757,15 @@ def diesize(x:int, y:int):
 
     return d_x, d_y
 
+def updateBT(in_txt:str, out_txt:str):
+     with open(in_txt, 'r') as f_in:
+        with open(out_txt, 'w') as f_out:
+            line = f_in.readline()
+            while line:
+                infos = line.split()
+                f_out.write("Terminal {} {} {}\n".format(net_infos_name2alias[infos[1]], infos[2], infos[3]))
+                line = f_in.readline()
+            
 def main(argv):
     design_name = ""
     top_name = ""

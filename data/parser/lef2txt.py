@@ -246,8 +246,8 @@ def output(output_file:str, d_x, d_y):
 
     f.write("\n")
 
-    f.write("TerminalSize 1000 1000\n")
-    f.write("TerminalSpacing 800\n")
+    f.write("TerminalSize 2000 2000\n")
+    f.write("TerminalSpacing 0\n")
 
     f.write("\n")
 
