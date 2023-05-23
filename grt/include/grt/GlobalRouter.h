@@ -53,12 +53,12 @@
 #include "odb/dbBlockCallBackObj.h"
 #include "sta/Liberty.hh"
 
-#define USE_MCMF 1
-#define USE_KM 0
+#define USE_MCF 1
+#define USE_LEGAL 0
 #define USE_GUROBI 0
 
-static int MAX_MATCH_ITERS = 1;
-static int BT_PITCH = 1000;
+static int MAX_MATCH_ITERS = 2;
+static int BT_PITCH = 2000;
 
 namespace gui {
 class Gui;
@@ -347,11 +347,9 @@ class GlobalRouter
   void updateDbCongestionFromGuides();
 
   // F2F functions
-  void BTermAssign(std::vector<Net*> nets);
-  void solveMatchMCMF(std::vector<std::vector<int>> costs, std::vector<std::vector<int>>& assigned);
-  void solveMatchGurobi(int net_num, int bterm_num, int** costs, int* constr_l, int* constr_u, bool** pre_assigned, double** assigned_ret);
-  void prim(Net* net, int bterm_num, int width, std::vector<int>& assign_cost);
-  int primHelper(std::vector<std::vector<int>>& graph, int root_idx, int* bt_cost);
+  void BTermAssign(std::vector<Net*> nets, bool mip = false);
+  // via legalization
+  void ViaLegal(std::vector<Net*> nets);
 
   // check functions
   void checkPinPlacement();

@@ -53,8 +53,6 @@
 
 #include "FastRoute.h"
 #include "Grid.h"
-#include "KM.h"
-#include "MCMF.h"
 #include "quadtree.h"
 #include "MakeWireParasitics.h"
 #include "RepairAntennas.h"
@@ -499,6 +497,7 @@ void GlobalRouter::initRoutingLayers()
 void GlobalRouter::setCapacities(int min_routing_layer, int max_routing_layer)
 {
   for (int l = 1; l <= grid_->getNumLayers(); l++) {
+    std::cout << "[DEBUG] layer " << l << " has capacities: ( " <<  grid_->getHorizontalEdgesCapacities()[l - 1] << ", " << grid_->getVerticalEdgesCapacities()[l - 1] << ")" << std::endl;
     if (l < min_routing_layer || l > max_routing_layer) {
       fastroute_->addHCapacity(0, l);
       fastroute_->addVCapacity(0, l);
@@ -2631,6 +2630,8 @@ void GlobalRouter::computeCapacities(int max_layer)
     RoutingTracks routing_tracks = getRoutingTracksByIndex(level);
     int track_spacing = routing_tracks.getUsePitch();
 
+    std::cout << "[DEBUG] max layer: " << max_layer << " current: " << level << " tileSize: " << (float) grid_->getTileSize() << " trackspacing: " << track_spacing << std::endl; 
+
     if (tech_layer->getDirection() == odb::dbTechLayerDir::HORIZONTAL) {
       h_capacity = std::floor((float) grid_->getTileSize() / track_spacing);
 
@@ -2738,18 +2739,83 @@ std::vector<Net*> GlobalRouter::initNetlist()
   int bterm_num = (rect.xMax() / BT_PITCH) * (rect.yMax() / BT_PITCH);
 
   // call bonding terminal assignment
-  BTermAssign(nets);
+#if USE_GUROBI
+  // mip
+  BTermAssign(nets, true);
+#endif
+
+#if USE_MCF
+  // iterative
+  BTermAssign(nets, false);
+#endif
+
+#if USE_LEGAL
+  ViaLegal(nets);
+#endif
 
   return nets;
 }
 
-void GlobalRouter::BTermAssign(std::vector<Net*> nets) {
+void GlobalRouter::ViaLegal(std::vector<Net*> nets) {
   auto tech = db_->getTech();
 
   // Init all the bonding terminal candidates
   auto rect = block_->getDieArea();
   auto width = rect.xMax();
-  int bterm_num = (rect.xMax() / BT_PITCH) * (rect.yMax() / BT_PITCH);
+  int bterm_num = std::ceil(rect.xMax() * 1.0 / BT_PITCH) * std::ceil(rect.yMax() * 1.0 / BT_PITCH);
+  std::vector<int> net_3d_ids;
+  std::vector<odb::dbBTerm *> bterms;
+  int net_num = 0;
+  std::vector<int> net_ids;
+  std::vector<Net*> nets_3d;
+  std::vector<odb::Rect> nets_3d_bbox;
+
+  for(int i = 0; i < nets.size(); ++i){
+    auto net = nets[i];
+    auto db_net = net->getDbNet();
+
+    if(db_net->getBTermCount()) {
+      // remove this pin
+      auto bt = db_net->get1stBTerm();
+      bterms.push_back(bt);
+      
+      net_3d_ids.push_back(i);
+
+      nets_3d.push_back(net);
+      nets_3d_bbox.push_back(db_net->getTermBBox());
+      net_ids.push_back(net_num);
+      net_num++;
+    }
+  }
+
+  Quad* via_legal = new Quad(block_->getDieArea(), nets_3d, nets_3d_bbox, bterms, db_, 100000);
+
+  via_legal->init(net_ids);
+
+  via_legal->legalize();
+
+  for(int i=0; i<net_num; i++) {
+    auto net = nets[net_3d_ids[i]];
+    auto db_net = net->getDbNet();
+    net->destroyPins();
+    makeItermPins(net, db_net, grid_->getGridArea());
+    makeBtermPins(net, db_net, grid_->getGridArea());
+    findPins(net);
+  }
+
+  if (verbose_)
+    logger_->info(GRT, 506, "Via Legal takes {} s to evaluate all the costs and {} s to solve min-cost flow in total. with min disp {}, max disp {} and total disp {}", Quad::cost_time, Quad::mcf_time, Quad::min_disp, Quad::max_disp, Quad::total_disp);
+
+
+}
+
+void GlobalRouter::BTermAssign(std::vector<Net*> nets, bool mip) {
+  auto tech = db_->getTech();
+
+  // Init all the bonding terminal candidates
+  auto rect = block_->getDieArea();
+  auto width = rect.xMax();
+  int bterm_num = std::ceil(rect.xMax() * 1.0 / BT_PITCH) * std::ceil(rect.yMax() * 1.0 / BT_PITCH);
   std::vector<int> net_3d_ids;
   int net_num = 0;
   std::vector<int> net_ids;
@@ -2764,11 +2830,11 @@ void GlobalRouter::BTermAssign(std::vector<Net*> nets) {
       // remove this pin
       auto bt = db_net->get1stBTerm();
       bt->disconnect();
+      odb::dbBTerm::destroy(bt);
       net_3d_ids.push_back(i);
 
       net->destroyPins();
       makeItermPins(net, db_net, grid_->getGridArea());
-      // makeBtermPins(net, db_net, grid_->getGridArea());
       findPins(net);
 
       nets_3d.push_back(net);
@@ -2778,17 +2844,53 @@ void GlobalRouter::BTermAssign(std::vector<Net*> nets) {
     }
   }
 
-  Quad* q_mcf = new Quad(rect, nets_3d, nets_3d_bbox, db_, logger_, bterm_num, 10000);
-  q_mcf->init(net_ids);
-  for(int i = 0; i < MAX_MATCH_ITERS; i++) {
-    q_mcf->solveMatchMCFOrtool();
-    q_mcf->update();
+
+  time_t mip_t = time(NULL);
+  if (mip) {
+    // int bound = 50000;
+    int bound = 100000;
+    Quad* q_mip = new Quad(rect, nets_3d, nets_3d_bbox, db_, logger_, bterm_num, bound);
+
+    q_mip->init(net_ids);
+
+    q_mip->AssignMip();
+    q_mip->clear();
+
+    time_t mip_e = time(NULL);
+
+    mip_t = mip_e - mip_t;
+
+  } else {
+    int bound = 100000;
+    // int bound = 50000;
+    MAX_MATCH_ITERS = 2;
+
+    Quad* q_mcf = new Quad(rect, nets_3d, nets_3d_bbox, db_, logger_, bterm_num, bound);
+
+    q_mcf->init(net_ids);
+
+    q_mcf->solveMatchMCFOrtool(true);
+
+    if(MAX_MATCH_ITERS == 2) {
+
+      q_mcf->update();
+
+      for(int i=0; i<net_num; i++) {
+        auto net = nets[net_3d_ids[i]];
+        auto db_net = net->getDbNet();
+        net->destroyPins();
+        makeItermPins(net, db_net, grid_->getGridArea());
+        makeBtermPins(net, db_net, grid_->getGridArea());
+        findPins(net);
+      }
+
+      q_mcf->solveMatchMCFOrtool(true);
+    }
+
+    q_mcf->clear();
   }
 
-  std::cout << "Bterm assignment takes " << Quad::cost_time << "s to evaluate all the costs and " << Quad::mcf_time << "s to solve min-cost flow in total." << std::endl;
-  
   for(int i=0; i<net_num; i++) {
-    
     auto net = nets[net_3d_ids[i]];
     auto db_net = net->getDbNet();
     net->destroyPins();
@@ -2797,359 +2899,13 @@ void GlobalRouter::BTermAssign(std::vector<Net*> nets) {
     findPins(net);
   }
 
-  q_mcf->clear();
 
-//   std::vector<std::vector<int>> costs(net_num);
-//   int constr_l[net_num];
-//   int constr_u[net_num];
-  
-//   time_t total_prim = 0;
-//   time_t total_rec = 0;
-
-//   // #pragma omp parallel for
-//   for(int i=0; i<net_num; i++) {
-//     auto net = nets[net_3d_ids[i]];
-//     auto time_s = time(NULL);
-//     net->destroyPins();
-//     makeItermPins(net, net->getDbNet(), grid_->getGridArea());
-//     makeBtermPins(net, net->getDbNet(), grid_->getGridArea());
-//     findPins(net);
-//     total_rec += time(NULL) - time_s;
-    
-//     time_s = time(NULL);
-//     costs[i].resize(bterm_num);
-//     prim(net, bterm_num, width, costs[i]);
-//     total_prim += time(NULL) - time_s;
-//     constr_l[i] = 1;
-//     constr_u[i] = std::min(net->getNumPins() / 2, 1);
-//   }
-
-//   std::cout << "CHECK with time rec: " << total_rec << " prim: " << total_prim << "s" << std::endl;
-
-//   if(net_num == 0)
-//     return;
-
-//   bool* pre_assigned[net_num];
-//   std::vector<std::vector<int>> assigned(net_num);
-//   for(int i=0; i<net_num; i++) {
-//     pre_assigned[i] = new bool[bterm_num];
-//     assigned[i].resize(bterm_num, 0);
-//     for(int j=0; j<bterm_num; j++) {
-//       pre_assigned[i][j] = false;
-//     }
-//   }
-
-// #if USE_MCMF
-//   for(int iter = 0; iter < MAX_MATCH_ITERS; ++iter) {
-//     std::cout <<"[ ITER " << iter << " ] Solve Matching problem using MCMF to assign " << bterm_num << " bonding terminals to " << net_num << " nets." << std::endl;
-//     solveMatchMCMF(costs, assigned);
-
-//     // update pre_assigned
-//       #pragma omp parallel for collapse(2)
-//       for(int i=0; i<net_num; i++) {
-//         for(int j=0; j<bterm_num; j++) {
-//           pre_assigned[i][j] += (assigned[i][j] > 0.5);
-//         }
-//       }
-      
-//       // add pins to nets
-//       // updateCost
-//       // #pragma omp parallel for
-//       for(int i = 0; i < net_num; ++i){
-//         auto net = nets[net_3d_ids[i]];
-//         auto db_net = net->getDbNet();
-//         #pragma omp parallel for
-//         for(int bt_id = 0; bt_id < bterm_num; ++bt_id) {
-//           if(assigned[i][bt_id] > 0.5) {
-//             std::string term_str = "BT"+std::to_string(bt_id);
-//             odb::dbBTerm* bterm = odb::dbBTerm::create(db_net, term_str.c_str());
-//             odb::Point bt = odb::Point((BT_PITCH * bt_id) % width, BT_PITCH * std::ceil((BT_PITCH * bt_id) / width));
-//             auto tech_layer = tech->findRoutingLayer(10); // TODO: 10 is the bonding terminal layer
-          
-//             if (!bterm) {
-//               logger_->error(GRT, 501, "Bonding terminal {} create fail.", term_str);
-//               exit(1);
-//             }
-
-//             // Added bpins
-//             odb::dbBPin * btpin = odb::dbBPin::create(bterm);
-
-//             odb::dbBox::create(btpin, tech_layer, bt.x() - (BT_PITCH / 2), bt.y() - (BT_PITCH / 2), bt.x() + (BT_PITCH / 2), bt.y() + (BT_PITCH / 2));
-//             bterm->setSigType(odb::dbSigType::SIGNAL);
-//             btpin->setPlacementStatus(odb::dbPlacementStatus::PLACED);
-//             bterm->connect(db_net);
-
-//             std::cout << "Add bt ( " << bt.x() << ", " << bt.y() << ", " << getLayerName(10, db_) << ") to net " << net->getName() << std::endl; 
-//           }
-//         }
-
-//         net->destroyPins();
-//         makeItermPins(net, db_net, grid_->getGridArea());
-//         makeBtermPins(net, db_net, grid_->getGridArea());
-//         findPins(net);
-//         prim(net, bterm_num, width, costs[i]);
-//       }
-
-//     exit(0);
-//   }
-// #endif
-
-//     // std::vector<int> assigned(net_num, -1);
-
-// #if USE_KM    
-//   // Matching iterations
-//   for(int iter = 0; iter < MAX_MATCH_ITERS; ++iter) {
-//     std::cout <<"[ ITER " << iter << " ] Solve Matching problem using KM algo to assign " << bterm_num << " bonding terminals to " << net_num << " nets." << std::endl;
-//     // solveMatchKM(net_num, bterm_num, costs, assigned);
-//     KM km(costs, net_num, bterm_num);
-//     km.compute();
-//     auto assigned = km.getMatch();
-//     for(int idx=0; idx<net_num; idx++) {
-//       std::cout << "[ASSIGNED] net " << nets[net_3d_ids[idx]]->getName() << " with bonding terminal " << assigned[idx] << std::endl;
-//     }
-//     std::cout << "[CHECK]" << std::endl;
-//     exit(0);
-//   }
-// #endif 
-}
-
-void GlobalRouter::solveMatchMCMF(std::vector<std::vector<int>> costs, std::vector<std::vector<int>>& assigned) {
-  std::cout << "[CHECK] assigned: " << assigned.size() << " x " << assigned[0].size() << std::endl;
-  int vertex_num = costs.size() + costs[0].size() + 2;
-  MCMF<int> flow_network(vertex_num);
-
-  int source = 0;
-  int sink = vertex_num - 1;
-  int min_cost;
-
-  for (int from = 0; from < vertex_num; from++) {
-    int to_s, to_e;
-    bool isN2B = false;
-    if (from == 0) {
-      // source to nets
-      isN2B = false;
-      to_s = 1;
-      to_e = costs.size() + 1;
-    } else if (from < costs.size() + 1) {
-      // nets to bterms
-      isN2B = true;
-      to_s = costs.size() + 1;
-      to_e = vertex_num - 1;
-    } else if (from < vertex_num - 1) {
-      // bterms to sink
-      isN2B = false;
-      to_s = vertex_num - 1;
-      to_e = vertex_num;
-    } else
-      continue;
-    for (int to = to_s; to < to_e; to++) {
-      if(isN2B)
-        flow_network.addPath(from, to, costs[from-1][to-to_s], 1);
-      else
-        flow_network.addPath(from, to, 1, 1);
-    }
+  if (verbose_) {
+    if(mip)
+      logger_->info(GRT, 507, "Bterm assignment with MIP takes {} s.", mip_t);
+    else
+      logger_->info(GRT, 508, "Bterm assignment takes {} s to evaluate all the costs and {} s to solve min-cost flow in total.", Quad::cost_time, Quad::mcf_time);
   }
-  std::cout << "Finish flow initialization." << std::endl;
-  
-  const int max_flow = flow_network.findMCMF(source, sink, min_cost);
-
-  printf("max flow: %d / min cost: %d\n", max_flow, min_cost);
-  for (int u = 0; u < costs.size(); ++u) {
-    for (int v = 0; v < costs[0].size(); ++v) {
-      const int flow = flow_network.getFlow(u+1, v+costs.size()+1);
-      assigned[u][v] = flow;
-      if (flow) {
-        printf("flow value from %d -> %d: %d\n", u, v, flow);
-      }
-    }
-  }
-}
-
-void GlobalRouter::solveMatchGurobi(int net_num, int bterm_num, int** costs, \
-           int* constr_l, int* constr_u, bool** pre_assigned, double** assigned_ret) {
-  try {
-    GRBEnv* env = new GRBEnv();
-
-    GRBModel model = GRBModel(*env);
-
-    // create variables
-    GRBVar ** assigned = NULL;
-
-    assigned = new GRBVar*[net_num];
-
-    bool* Assigned[net_num];
-  
-    for(int i=0; i<net_num; i++) {
-      Assigned[i] = new bool[bterm_num];
-      for(int j=0; j<bterm_num; j++)
-        Assigned[i][j] = false;
-    }
-
-    //GRBVar* assigned = model.addVars(type=GRB_BINARY, count=net_num);
-    for(int idx = 0; idx < net_num; ++idx) {
-      assigned[idx] = new GRBVar[bterm_num];
-    }
-    
-    for(int i=0; i < net_num; i++) {
-        assigned[i] = model.addVars(bterm_num, GRB_BINARY);
-      for(int j=0; j < bterm_num; j++) {
-        assigned[i][j].set(GRB_DoubleAttr_Obj, Assigned[i][j]);
-        assigned[i][j].set(GRB_StringAttr_VarName, "assign_"+std::to_string(j)+"_"+std::to_string(i));
-      }
-    }
-
-    // set objective
-    GRBLinExpr obj_sum = 0;
-    for(int i=0; i < net_num; i++) {
-      for(int j=0; j < bterm_num; j++) {
-        obj_sum += assigned[i][j] * costs[i][j];
-      }
-    }
-
-    model.setObjective(obj_sum, GRB_MINIMIZE);
-  
-    // constraints
-    for(int i=0; i<net_num; i++) {
-      GRBLinExpr sum_axis_1 = 0;
-      GRBLinExpr sum_axis_cur = 0;
-      for(int j=0; j<bterm_num; j++) {
-        sum_axis_1 += assigned[i][j] + pre_assigned[i][j];
-        sum_axis_cur += assigned[i][j];
-      }
-      model.addConstr(sum_axis_1 <= constr_u[i], "c0");
-      model.addConstr(sum_axis_1 >= constr_l[i], "c1");
-      model.addConstr(sum_axis_cur <= 1, "c2");
-    }
-    for(int j=0; j<bterm_num; j++) {
-      GRBLinExpr sum_axis_0 = 0;
-      for(int i=0; i<net_num; i++) {
-        sum_axis_0 += assigned[i][j] + pre_assigned[i][j];
-      }
-      model.addConstr(sum_axis_0 <= 1, "c3");
-    }
-
-    model.optimize();
-
-    if (model.get(GRB_IntAttr_SolCount) > 0) {
-      for(int i=0; i<net_num; i++) {
-        assigned_ret[i] = (model.get(GRB_DoubleAttr_X, assigned[i], bterm_num));
-      }
-
-      for(int idx = 0; idx < net_num; ++idx) {
-        delete[] assigned[idx];
-        delete[] Assigned[idx];
-      }
-      delete env;
-    }
-
-    return;
-
-  } catch(GRBException e) {
-    std::cout << "Error code = " << e.getErrorCode() << std::endl;
-    std::cout << e.getMessage() << std::endl;
-  } catch(...) {
-    std::cout << "Exception during optimization" << std::endl;
-  }
-}
-
-void GlobalRouter::prim(Net* net, int bterm_num, int width, std::vector<int>& assign_cost) {
-
-  int node_num = net->getNumPins();
-  auto pins = net->getPins();
-  int root_idx = 0;
-
-  // init cost matrix
-  std::vector<std::vector<int>> graph(node_num);
-
-  #pragma omp parallel for
-  for(int nid_1 = 0; nid_1 < node_num; ++nid_1) {
-    graph[nid_1].resize(node_num);
-    if(nid_1 != node_num - 1) {
-      if(pins[nid_1].isDriver())
-        root_idx = nid_1;
-    }
-  }
-
-  #pragma omp parallel for collapse(2)
-  for(int nid_1 = 0; nid_1 < node_num; ++nid_1) {
-    for(int nid_2 = 0; nid_2 < node_num; ++nid_2) {
-      if(nid_1 > nid_2)
-          continue;
-      if(nid_1 == nid_2) {
-        graph[nid_1][nid_2] = 0;
-      } else if((nid_1 != node_num - 1) && (nid_2 != node_num - 1)){
-        auto p1 = pins[nid_1].getPosition();
-        auto p2 = pins[nid_2].getPosition();
-
-        graph[nid_1][nid_2] = (abs(p1.x()-p2.x())+abs(p1.y()-p2.y()));
-        graph[nid_2][nid_1] = (abs(p1.x()-p2.x())+abs(p1.y()-p2.y()));
-      }
-    }
-  }
-
-  #pragma omp parallel for
-  for(int bt_id = 0; bt_id < bterm_num; ++bt_id) {
-
-      int bt_cost[node_num];
-      // #pragma omp parallel for
-      for(int nid_1 = 0; nid_1 < node_num; ++nid_1) {
-        odb::Point bt = odb::Point((BT_PITCH * (bt_id)) % width, BT_PITCH * std::ceil((BT_PITCH * (bt_id)) / width));
-        auto p1 = pins[nid_1].getPosition();
-        bt_cost[nid_1] = (abs(p1.x()-bt.x()) + abs(p1.y() - bt.y()));
-      }
-
-      assign_cost[bt_id]= primHelper(graph, root_idx, bt_cost);
-  }
-}
-
-int GlobalRouter::primHelper(std::vector<std::vector<int>>& graph, int root_idx, int* bt_cost) {
-  int node_num = graph[0].size() + 1;
-  int total_weight = 0;
-  std::vector<bool> selected(node_num, false);
-  std::vector<int> weight(node_num, std::numeric_limits<int>::max());
-  std::vector<int> to(node_num, -1);
-
-  weight[root_idx] = 0;
-
-  for (int i=0; i<node_num; ++i) {
-      int v = -1;
-      for (int j = 0; j < node_num; ++j) {
-          if (!selected[j] && (v == -1 || weight[j] < weight[v]))
-              v = j;
-      }
-
-      if (weight[v] == std::numeric_limits<int>::max()) {
-          std::cout << "No MST!" << std::endl;
-          exit(0);
-      }
-
-      selected[v] = true;
-      total_weight += weight[v];
-      // if (to[v] != -1)
-      //     std::cout << v << " " << to[v] << std::endl;
-      // #pragma omp parallel for
-      for (int to_id = 0; to_id < node_num; ++to_id) {
-        auto cost = 0;
-        if((v == node_num - 1) && (to_id == (node_num - 1))) {
-          cost = 0;
-        }
-        else if(v == (node_num - 1)) {
-          cost = bt_cost[to_id];
-        } else if (to_id == (node_num - 1)) {
-          cost = bt_cost[v];
-        } else {
-          cost = graph[v][to_id];
-        }
-
-        if (cost < weight[to_id]) {
-          weight[to_id] = cost;
-          to[to_id] = v;
-        }
-      }
-  }
-
-  // std::cout << total_weight << std::endl;
-  return total_weight;
 }
 
 Net* GlobalRouter::addNet(odb::dbNet* db_net)

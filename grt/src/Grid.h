@@ -153,7 +153,7 @@ class Grid
   bool perfect_regular_x_;
   bool perfect_regular_y_;
   int num_layers_;
-  int pitches_in_tile_ = 15;
+  int pitches_in_tile_ = 10;
   std::vector<int> spacings_;
   std::vector<int> min_widths_;
   std::vector<int> horizontal_edges_capacities_;
