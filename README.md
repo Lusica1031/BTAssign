@@ -22,3 +22,7 @@ Replace the [FastRoute](https://github.com/The-OpenROAD-Project/OpenROAD/tree/ma
 
 #### Cite
 TBD
+
+#### License
+
+CU-SD License. See [LICENSE](LICENSE) file.
