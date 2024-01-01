@@ -768,25 +768,6 @@ void Quad::AssignMip() {
 //===========================
 // Helper functions
 //===========================
-void Quad::XWL(Net* net, std::vector<int> valid_bts, std::vector<int>& assign_cost) {
-    int node_num = net->getNumPins();
-    auto pins = net->getPins();
-    int root_idx = 0;
-
-    assign_cost.resize(valid_bts.size(), 0);
-
-    for(int i=0; i<valid_bts.size(); i++) {
-        int bt_id = valid_bts[i];
-        odb::Point bt = odb::Point((bt_id % int(std::ceil(width * 1.0 / BT_PITCH))) * BT_PITCH, std::floor(bt_id / std::ceil(width * 1.0 / BT_PITCH)) * BT_PITCH);
-        for(auto pin : pins) {
-            auto pin_pos = pin.getPosition();
-            assign_cost[i] += abs(pin_pos.x() - bt.x()) + abs(pin_pos.y() + bt.y());
-        }
-    }
-
-    // return assign_cost;
-}
-
 void Quad::prim(Net* net, std::vector<int> valid_bts, std::vector<int>& assign_cost) {
     int node_num = net->getNumPins();
     auto pins = net->getPins();
