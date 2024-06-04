@@ -1,6 +1,6 @@
 # BTAssign
 
-Offical repo to implement F2F bonding terminal assignment algorithms into [FastRoute](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/grt)
+Offical repo to implement F2F bonding terminal assignment algorithms based on [FastRoute](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/grt)
 
 Algorithm description:
 
@@ -23,11 +23,20 @@ Replace the [FastRoute](https://github.com/The-OpenROAD-Project/OpenROAD/tree/ma
 
 #### Cite
 ```
-TBD
+@inproceedings{liu2024routing,
+  title={Routing-aware Legal Hybrid Bonding Terminal Assignment for 3D Face-to-Face Stacked ICs},
+  author={Liu, Siting and Jiang, Jiaxi and He, Zhuolun and Wang, Ziyi and Lin, Yibo and Yu, Bei and Wong, Martin},
+  booktitle={Proceedings of the 2024 International Symposium on Physical Design},
+  pages={75--82},
+  year={2024}
+}
 ```
 
 #### Datasets
-To Do
+Please feel free to contact Siting Liu ( lusicaliu@outlook.com )
+
+#### Acknowledgement
+Deepest gratitude to all the contributors for [OpenROAD](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/) project and thanks for the great contributions to this community.
 
 #### License
 
