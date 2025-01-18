@@ -1,0 +1,6 @@
+https://github.com/openrisc/or1200
+https://github.com/freecores/ethmac
+https://opencores.org/projects/jpegencode
+https://github.com/openrisc/mor1kx
+https://github.com/ucb-bar/sha3
+https://opencores.org/projects/tiny_aes
