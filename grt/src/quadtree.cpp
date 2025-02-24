@@ -782,8 +782,9 @@ void Quad::prim(Net* net, std::vector<int> valid_bts, std::vector<int>& assign_c
     for(int nid_1 = 0; nid_1 < node_num; ++nid_1) {
         graph[nid_1].resize(node_num);
         if(nid_1 != node_num - 1) {
-        if(pins[nid_1].isDriver())
-            root_idx = nid_1;
+            if(pins[nid_1].isDriver())
+                root_idx = nid_1;
+            }
         }
     }
 
@@ -845,8 +846,9 @@ void Quad::primMip(Net* net, std::vector<int> valid_bts, std::vector<std::vector
     for(int nid_1 = 0; nid_1 < node_num; ++nid_1) {
         graph[nid_1].resize(node_num);
         if(nid_1 != node_num - 1) {
-        if(pins[nid_1].isDriver())
-            root_idx = nid_1;
+            if(pins[nid_1].isDriver())
+                root_idx = nid_1;
+            }
         }
     }
 
