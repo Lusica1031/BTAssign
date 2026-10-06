@@ -1,0 +1,53 @@
+{
+  "input": "third_party/Open3DBench/Place-LoL/binaries/converted_input/default/aes.input",
+  "placement": "third_party/Open3DBench/Place-LoL/binaries/iccad2022/cadb1021/output/default/aes.txt",
+  "three_d_nets": 1492,
+  "candidate_count": 3721,
+  "terminal_size_um": [
+    1.0,
+    1.0
+  ],
+  "pitch_um": [
+    2.0,
+    2.0
+  ],
+  "partition_um": 50.0,
+  "budget": 2,
+  "sample_factors": [
+    8,
+    4
+  ],
+  "second_terminal_max_increment_ratio": 0.5,
+  "baseline": {
+    "mst_proxy_um": 59917.71,
+    "prudy_sum": 50.92132674172251,
+    "prudy_mean": 0.034129575564157175,
+    "terminal_count": 1492,
+    "grid_aligned": 0,
+    "unique": 1492,
+    "spacing_violations": 0
+  },
+  "wl": {
+    "mst_proxy_um": 55153.0,
+    "prudy_sum": 58.692221915722335,
+    "prudy_mean": 0.030696768784373607,
+    "terminal_count": 1912,
+    "grid_aligned": 1912,
+    "unique": 1912,
+    "spacing_violations": 0,
+    "runtime_s": 86.41068735800218,
+    "mst_improvement_pct": 7.952089624252995
+  },
+  "r": {
+    "mst_proxy_um": 54783.58,
+    "prudy_sum": 57.31638808654653,
+    "prudy_mean": 0.02997719042183396,
+    "terminal_count": 1912,
+    "grid_aligned": 1912,
+    "unique": 1912,
+    "spacing_violations": 0,
+    "runtime_s": 159.81482736799808,
+    "mst_improvement_pct": 8.568635216532803,
+    "strategy": "WL-seeded constrained WL + adaptive-beta P-RUDY"
+  }
+}

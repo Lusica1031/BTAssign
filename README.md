@@ -21,6 +21,19 @@ The key implementation can refer to grt/src/quadtree.cpp.
 #### Usage
 Replace the [FastRoute](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/grt) in OpenROAD, and directly use the OpenROAD framework.
 
+#### Open3DBench K=2 reproduction
+
+The reproducible Open3DBench AES/cadb1021 integration is organized under
+[`Open3DBench-reproduction/`](Open3DBench-reproduction/README.md). It contains:
+
+- the BTAssign-WL and safeguarded BTAssign-R K=2 implementation;
+- the OpenROAD LoL flow script and isolated WL/R configurations;
+- the exact Open3DBench Makefile patch;
+- local legality/proxy metrics and server FastRoute/detailed-route results.
+
+The archived package intentionally excludes generated DEF/ODB/SPEF files,
+build caches, and third-party dependencies.
+
 #### Cite
 ```
 @inproceedings{liu2024routing,

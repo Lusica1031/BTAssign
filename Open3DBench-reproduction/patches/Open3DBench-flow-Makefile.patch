@@ -1,0 +1,20 @@
+--- Open3DBench/OpenROAD-3D/flow/Makefile
++++ Open3DBench/OpenROAD-3D/flow/Makefile
+@@ -717,6 +717,8 @@
+ 	cp $(RESULTS_DIR)/1_synth.sdc $(RESULTS_DIR)/4_cts.sdc
+ 	$(UNSET_AND_MAKE) do-route do-finish
+ 
++LOLFLOW_FINAL_TARGETS ?= do-route do-finish
++
+ .PHONY: do-lolflow
+ do-lolflow:
+ 	mkdir -p $(RESULTS_DIR) $(LOG_DIR) $(REPORTS_DIR)
+@@ -730,7 +732,7 @@
+ 	$(OPENROAD_EXE) -exit scripts_3D/load_cts.tcl
+ 	cp $(RESULTS_DIR)/my_cts.odb $(RESULTS_DIR)/4_cts.odb
+ 	cp $(RESULTS_DIR)/1_synth.sdc $(RESULTS_DIR)/4_cts.sdc
+-	$(UNSET_AND_MAKE) do-route do-finish
++	$(UNSET_AND_MAKE) $(LOLFLOW_FINAL_TARGETS)
+ 
+ .PHONY: do-get_3d_hpwl
+ do-get_3d_hpwl:
